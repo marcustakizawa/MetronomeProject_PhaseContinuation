@@ -108,6 +108,14 @@ public class PrecisionMetronome_v4_MultipleDisplays : MonoBehaviour {
             _bpm = value;
             _beatIntervalSeconds = 60.0 / _bpm;
             if (bpmInput != null) bpmInput.text = _bpm.ToString("F2");
+
+            // Fire event to update widgets
+            OnMetronomeSettingsChanged?.Invoke(
+                MetronomeChange.ChangeType.Tempo,
+                _bpm,
+                _beatsPerMeasure
+            );
+
         }
     }
 
@@ -116,6 +124,14 @@ public class PrecisionMetronome_v4_MultipleDisplays : MonoBehaviour {
         set {
             _beatsPerMeasure = Mathf.Max(1, value);
             if (beatsInput != null) beatsInput.text = _beatsPerMeasure.ToString();
+
+            // Fire event to update widgets
+            OnMetronomeSettingsChanged?.Invoke(
+                MetronomeChange.ChangeType.TimeSignature,
+                _bpm,
+                _beatsPerMeasure
+            );
+
         }
     }
 
@@ -746,5 +762,66 @@ public class PrecisionMetronome_v4_MultipleDisplays : MonoBehaviour {
         } else {
             beatsInput.text = _beatsPerMeasure.ToString();
         }
+    }
+
+    /// <summary>
+    /// Force the current beat position (for synchronization)
+    /// Used by AbruptSyncModule to align beats at sync point
+    /// </summary>
+    public void SetCurrentBeat(int beat) {
+        if (beat < 1 || beat > _beatsPerMeasure) {
+            Debug.LogWarning($"[{name}] Invalid beat {beat}, must be 1-{_beatsPerMeasure}");
+            return;
+        }
+
+        _currentBeat = beat;
+
+        if (debugChangeSystem) {
+            Debug.Log($"[{name}] Beat forced to {beat}");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ADD THIS METHOD TO: PrecisionMetronome_v4_MultipleDisplays.cs
+    // Location: After SetCurrentBeat() method (around line 450-500)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Synchronize this metronome's timing to match another metronome exactly.
+    /// This creates perfect phase alignment by copying the master's internal timing state.
+    /// Used by AbruptSyncModule for sub-millisecond precision sync.
+    /// </summary>
+    /// <param name="master">The metronome to sync to</param>
+    public void SyncToMetronome(PrecisionMetronome_v4_MultipleDisplays master) {
+        if (master == null) {
+            Debug.LogError($"[{name}] Cannot sync to null metronome!");
+            return;
+        }
+
+        // Copy timing state
+        _nextBeatTime = master._nextBeatTime;
+        _beatIntervalSeconds = master._beatIntervalSeconds;
+
+        // Copy beat/measure state
+        _currentBeat = master._currentBeat;
+        // NOTE: We don't copy _currentMeasure - each track keeps its own measure count!
+
+        // Copy musical settings
+        _bpm = master._bpm;
+        _beatsPerMeasure = master._beatsPerMeasure;
+
+        // Log the sync
+        if (debugChangeSystem) {
+            Debug.Log($"[{name}] ✓ SYNCED to {master.name}");
+            Debug.Log($"  NextBeatTime: {_nextBeatTime:F6}");
+            Debug.Log($"  Beat: {_currentBeat}, BPM: {_bpm}, TimeSignature: {_beatsPerMeasure}/4");
+        }
+
+        // Fire event to notify displays
+        OnMetronomeSettingsChanged?.Invoke(
+            MetronomeChange.ChangeType.Both,
+            _bpm,
+            _beatsPerMeasure
+        );
     }
 }
