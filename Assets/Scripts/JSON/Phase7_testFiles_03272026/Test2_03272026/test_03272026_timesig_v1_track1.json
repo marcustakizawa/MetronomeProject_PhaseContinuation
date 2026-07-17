@@ -1,0 +1,10 @@
+{
+  "formatVersion": 2,
+  "title": "Track 1 - Steady 70 BPM 4/4",
+  "initialBpm": 70.0,
+  "initialBeatsPerMeasure": 4,
+  "changes": [
+    { "measure": 9, "beat": 4, "type": "Mute", "description": "Mute before stop" },
+    { "measure": 10, "beat": 1, "type": "Stop", "description": "Stop on downbeat M10" }
+  ]
+}

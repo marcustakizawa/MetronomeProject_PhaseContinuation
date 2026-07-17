@@ -1,0 +1,11 @@
+{
+  "formatVersion": 2,
+  "title": "Track 3 - Drift to 80 BPM",
+  "initialBpm": 70.0,
+  "initialBeatsPerMeasure": 4,
+  "changes": [
+    { "measure": 4, "beat": 1, "bpm": 80.0, "type": "Tempo", "description": "Drift to 80 BPM" },
+    { "measure": 16, "beat": 4, "type": "Mute", "description": "Mute before stop" },
+    { "measure": 17, "beat": 1, "type": "Stop", "description": "Stop on downbeat M17" }
+  ]
+}

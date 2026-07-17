@@ -1,0 +1,7 @@
+{
+    "title": "Track 1 - Steady Reference",
+    "description": "Reference timeline. Stays at 120 BPM throughout. M1 is watched at M30 B1 to trigger beat alignment.",
+    "initialBpm": 120.0,
+    "initialBeatsPerMeasure": 4,
+    "changes": []
+}

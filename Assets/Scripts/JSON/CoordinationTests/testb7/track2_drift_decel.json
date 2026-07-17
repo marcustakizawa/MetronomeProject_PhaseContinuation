@@ -1,0 +1,57 @@
+{
+    "title": "Track 2 - Drift and Decelerate",
+    "description": "Starts at 120 BPM. Jumps to 130 BPM at M5 (drifts ahead of Track 1). Decelerates back to 120 BPM across M25-M30. At M30 B1, the coordinator fires a beat-level reset.",
+    "initialBpm": 120.0,
+    "initialBeatsPerMeasure": 4,
+    "changes": [
+        {
+            "type": 0,
+            "targetMeasure": 5,
+            "targetBeat": 1,
+            "newBpm": 130.0,
+            "description": "Drift: jump ahead to 130 BPM"
+        },
+        {
+            "type": 0,
+            "targetMeasure": 25,
+            "targetBeat": 1,
+            "newBpm": 128.0,
+            "description": "Decel step 1: 130→128"
+        },
+        {
+            "type": 0,
+            "targetMeasure": 26,
+            "targetBeat": 1,
+            "newBpm": 126.0,
+            "description": "Decel step 2: 128→126"
+        },
+        {
+            "type": 0,
+            "targetMeasure": 27,
+            "targetBeat": 1,
+            "newBpm": 124.0,
+            "description": "Decel step 3: 126→124"
+        },
+        {
+            "type": 0,
+            "targetMeasure": 28,
+            "targetBeat": 1,
+            "newBpm": 122.0,
+            "description": "Decel step 4: 124→122"
+        },
+        {
+            "type": 0,
+            "targetMeasure": 29,
+            "targetBeat": 1,
+            "newBpm": 121.0,
+            "description": "Decel step 5: 122→121"
+        },
+        {
+            "type": 0,
+            "targetMeasure": 30,
+            "targetBeat": 1,
+            "newBpm": 120.0,
+            "description": "Convergence: tempo matches reference at 120 BPM"
+        }
+    ]
+}

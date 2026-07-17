@@ -1,0 +1,32 @@
+{
+  "compositionTitle": "Test B8 - Pickup Beat Alignment",
+  "tracks": [
+    {
+      "id": "track1",
+      "jsonFile": "track1_steady",
+      "metronomeReference": "metronome1"
+    },
+    {
+      "id": "track2",
+      "jsonFile": "track2_b8_drift",
+      "metronomeReference": "metronome2"
+    }
+  ],
+  "beatLevelAlignments": [
+    {
+      "referenceTrack": "track1",
+      "referenceMeasure": 30,
+      "referenceBeat": 4,
+      "actionTrack": "track2",
+      "action": "resetBeat",
+      "resetToBeat": 1,
+      "targetBpm": 120.0,
+      "description": "Pickup beat: fires on M30 B4, locks both at M31 B1 at 120 BPM"
+    }
+  ],
+  "startAll": {
+    "enabled": true,
+    "atMeasure": 1,
+    "delaySeconds": 0.5
+  }
+}

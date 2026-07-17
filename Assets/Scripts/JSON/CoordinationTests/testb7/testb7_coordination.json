@@ -1,0 +1,35 @@
+{
+    "compositionTitle": "Test B7 - Drift-Ramp-Sync Cycle",
+    "description": "M1 is the steady reference. M2 drifts ahead at 130 BPM (M5), decelerates back to 120 BPM (M25-M30), then receives a beat-level alignment reset at M30 B1.",
+
+    "tracks": [
+        {
+            "id": "track1",
+            "jsonFile": "track1_steady",
+            "metronomeReference": "metronome1"
+        },
+        {
+            "id": "track2",
+            "jsonFile": "track2_drift_decel",
+            "metronomeReference": "metronome2"
+        }
+    ],
+
+    "beatLevelAlignments": [
+        {
+            "description": "Perfect sync at convergence - M2 beat reset to 1 when M1 hits M30 B1",
+            "referenceTrack": "track1",
+            "referenceMeasure": 30,
+            "referenceBeat": 1,
+            "actionTrack": "track2",
+            "action": "resetBeat",
+            "resetToBeat": 1
+        }
+    ],
+
+    "startAll": {
+        "enabled": true,
+        "atMeasure": 1,
+        "delaySeconds": 0.5
+    }
+}

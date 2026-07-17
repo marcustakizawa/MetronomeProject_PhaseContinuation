@@ -1,0 +1,43 @@
+{
+    "title": "MM1_AbruptSyncTest_01072026",
+    "initialBpm": 120.0,
+    "initialBeatsPerMeasure": 4,
+    "changes": [
+        {
+            "type": 2,
+            "targetMeasure": 1,
+            "newBpm": 120.0,
+            "newBeatsPerMeasure": 4,
+            "isProcessed": false,
+            "description": "",
+            "hasTempo": true,
+            "hasTimeSignature": true,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false,
+            "enableNotifications": false,
+            "advanceNotificationMeasures": 1,
+            "customNotificationMessage": "",
+            "isUrgent": false
+        },
+        {
+            "type": 3,
+            "targetMeasure": 50,
+            "newBpm": 120.0,
+            "newBeatsPerMeasure": 0,
+            "isProcessed": false,
+            "description": "",
+            "hasTempo": false,
+            "hasTimeSignature": false,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false,
+            "enableNotifications": false,
+            "advanceNotificationMeasures": 1,
+            "customNotificationMessage": "",
+            "isUrgent": false
+        }
+    ]
+}

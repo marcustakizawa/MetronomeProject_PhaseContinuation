@@ -1,0 +1,10 @@
+{
+  "formatVersion": 2,
+  "title": "Track 2 - 70.5 BPM 5/4",
+  "initialBpm": 70.5,
+  "initialBeatsPerMeasure": 5,
+  "changes": [
+    { "measure": 9, "beat": 5, "type": "Mute", "description": "Mute before stop" },
+    { "measure": 10, "beat": 1, "type": "Stop", "description": "Stop on downbeat M10" }
+  ]
+}

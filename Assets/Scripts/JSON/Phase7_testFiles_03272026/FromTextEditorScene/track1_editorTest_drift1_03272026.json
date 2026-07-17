@@ -1,0 +1,50 @@
+{
+    "formatVersion": 2,
+    "title": "track1_editorTest_drift1_03272026",
+    "initialBpm": 120.0,
+    "initialBeatsPerMeasure": 4,
+    "changes": [
+        {
+            "measure": 1,
+            "beat": 1,
+            "bpm": 70.0,
+            "beatsPerMeasure": 4,
+            "type": "Both",
+            "description": "",
+            "hasTempo": true,
+            "hasTimeSignature": true,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false
+        },
+        {
+            "measure": 10,
+            "beat": 4,
+            "bpm": 120.0,
+            "beatsPerMeasure": 0,
+            "type": "Mute",
+            "description": "Mute before stop",
+            "hasTempo": false,
+            "hasTimeSignature": false,
+            "hasAudioEvent": true,
+            "hasVisualEvent": false,
+            "muteAudio": true,
+            "hideVisual": false
+        },
+        {
+            "measure": 11,
+            "beat": 1,
+            "bpm": 120.0,
+            "beatsPerMeasure": 0,
+            "type": "Stop",
+            "description": "Stop on downbeat M11",
+            "hasTempo": false,
+            "hasTimeSignature": false,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false
+        }
+    ]
+}

@@ -1,0 +1,48 @@
+{
+    "compositionTitle": "track1_editorTest_coordinationFile_03272026",
+    "description": "",
+    "tracks": [
+        {
+            "id": "track1",
+            "jsonFile": "track1_editorTest_drift1_03272026.json",
+            "metronomeReference": "metronome1"
+        },
+        {
+            "id": "track2",
+            "jsonFile": "track2_editorTest_drift1_03272026.json",
+            "metronomeReference": "metronome2"
+        },
+        {
+            "id": "track3",
+            "jsonFile": "track3_editorTest_drift1_03272026.json",
+            "metronomeReference": "metronome3"
+        }
+    ],
+    "beatLevelAlignments": [
+        {
+            "description": "Sync track2 to track1 at M7 B1",
+            "referenceTrack": "track1",
+            "lockAtMeasure": 7,
+            "lockAtBeat": 1,
+            "actionTrack": "track2",
+            "action": "resetBeat",
+            "resetToBeat": 1,
+            "targetBpm": 70.0
+        },
+        {
+            "description": "Sync track3 to track1 at M7 B1",
+            "referenceTrack": "track1",
+            "lockAtMeasure": 7,
+            "lockAtBeat": 1,
+            "actionTrack": "track3",
+            "action": "resetBeat",
+            "resetToBeat": 1,
+            "targetBpm": 70.0
+        }
+    ],
+    "startAll": {
+        "enabled": true,
+        "atMeasure": 1,
+        "delaySeconds": 0.5
+    }
+}

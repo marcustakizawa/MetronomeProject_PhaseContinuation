@@ -1,0 +1,64 @@
+{
+    "formatVersion": 2,
+    "title": "track3_editorTest_drift1_03272026",
+    "initialBpm": 120.0,
+    "initialBeatsPerMeasure": 4,
+    "changes": [
+        {
+            "measure": 1,
+            "beat": 1,
+            "bpm": 70.0,
+            "beatsPerMeasure": 4,
+            "type": "Both",
+            "description": "",
+            "hasTempo": true,
+            "hasTimeSignature": true,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false
+        },
+        {
+            "measure": 4,
+            "beat": 1,
+            "bpm": 80.0,
+            "beatsPerMeasure": 0,
+            "type": "Tempo",
+            "description": "Drift to 80 BPM",
+            "hasTempo": true,
+            "hasTimeSignature": false,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false
+        },
+        {
+            "measure": 16,
+            "beat": 4,
+            "bpm": 120.0,
+            "beatsPerMeasure": 0,
+            "type": "Mute",
+            "description": "Mute before stop",
+            "hasTempo": false,
+            "hasTimeSignature": false,
+            "hasAudioEvent": true,
+            "hasVisualEvent": false,
+            "muteAudio": true,
+            "hideVisual": false
+        },
+        {
+            "measure": 17,
+            "beat": 1,
+            "bpm": 120.0,
+            "beatsPerMeasure": 0,
+            "type": "Stop",
+            "description": "Stop on downbeat M17",
+            "hasTempo": false,
+            "hasTimeSignature": false,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false
+        }
+    ]
+}

@@ -1,0 +1,31 @@
+{
+  "compositionTitle": "Test 03272026 - Drift v1",
+  "tracks": [
+    { "id": "track1", "jsonFile": "test_03272026_drift_v1_track1", "metronomeReference": "metronome1" },
+    { "id": "track2", "jsonFile": "test_03272026_drift_v1_track2", "metronomeReference": "metronome2" },
+    { "id": "track3", "jsonFile": "test_03272026_drift_v1_track3", "metronomeReference": "metronome3" }
+  ],
+  "beatLevelAlignments": [
+    {
+      "referenceTrack": "track1",
+      "lockAtMeasure": 7,
+      "lockAtBeat": 1,
+      "actionTrack": "track2",
+      "action": "resetBeat",
+      "resetToBeat": 1,
+      "targetBpm": 70.0,
+      "description": "Sync track2 to track1 at M7 B1"
+    },
+    {
+      "referenceTrack": "track1",
+      "lockAtMeasure": 7,
+      "lockAtBeat": 1,
+      "actionTrack": "track3",
+      "action": "resetBeat",
+      "resetToBeat": 1,
+      "targetBpm": 70.0,
+      "description": "Sync track3 to track1 at M7 B1"
+    }
+  ],
+  "startAll": { "enabled": true, "atMeasure": 1, "delaySeconds": 0.0 }
+}

@@ -1,0 +1,13 @@
+{
+  "initialBpm": 120.0,
+  "initialBeatsPerMeasure": 4,
+  "changes": [
+    {
+      "targetMeasure": 5,
+      "targetBeat": 1,
+      "newBpm": 110.0,
+      "type": 0,
+      "description": "Drift: jump to 110 BPM"
+    }
+  ]
+}
