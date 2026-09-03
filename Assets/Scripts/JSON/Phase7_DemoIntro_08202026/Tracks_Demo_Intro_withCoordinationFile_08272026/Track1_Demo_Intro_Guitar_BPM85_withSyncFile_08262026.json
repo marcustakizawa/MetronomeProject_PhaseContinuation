@@ -1,0 +1,50 @@
+{
+    "formatVersion": 2,
+    "title": "Track1_Demo_Intro_Guitar_BPM85_withSyncFile_08262026",
+    "initialBpm": 120.0,
+    "initialBeatsPerMeasure": 4,
+    "changes": [
+        {
+            "measure": 1,
+            "beat": 1,
+            "bpm": 85.0,
+            "beatsPerMeasure": 4,
+            "type": "Both",
+            "description": "",
+            "hasTempo": true,
+            "hasTimeSignature": true,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false
+        },
+        {
+            "measure": 18,
+            "beat": 2,
+            "bpm": 120.0,
+            "beatsPerMeasure": 0,
+            "type": "Mute",
+            "description": "",
+            "hasTempo": false,
+            "hasTimeSignature": false,
+            "hasAudioEvent": true,
+            "hasVisualEvent": false,
+            "muteAudio": true,
+            "hideVisual": false
+        },
+        {
+            "measure": 19,
+            "beat": 1,
+            "bpm": 120.0,
+            "beatsPerMeasure": 0,
+            "type": "Stop",
+            "description": "",
+            "hasTempo": false,
+            "hasTimeSignature": false,
+            "hasAudioEvent": false,
+            "hasVisualEvent": false,
+            "muteAudio": false,
+            "hideVisual": false
+        }
+    ]
+}

@@ -1,0 +1,38 @@
+{
+    "compositionTitle": "AllTracks_SyncFile_Demo_Intro_Corrected_08272026",
+    "description": "",
+    "tracks": [
+        {
+            "id": "track1",
+            "jsonFile": "Track1_Demo_Intro_Guitar_BPM85_withSyncFile_08262026.json",
+            "metronomeReference": "metronome1"
+        },
+        {
+            "id": "track2",
+            "jsonFile": "track2.json",
+            "metronomeReference": "metronome2"
+        },
+        {
+            "id": "track3",
+            "jsonFile": "track3.json",
+            "metronomeReference": "metronome3"
+        }
+    ],
+    "beatLevelAlignments": [
+        {
+            "description": "",
+            "referenceTrack": "track1",
+            "lockAtMeasure": 19,
+            "lockAtBeat": 1,
+            "actionTrack": "",
+            "action": "stopAll",
+            "resetToBeat": 1,
+            "targetBpm": 0.0
+        }
+    ],
+    "startAll": {
+        "enabled": true,
+        "atMeasure": 1,
+        "delaySeconds": 0.5
+    }
+}
