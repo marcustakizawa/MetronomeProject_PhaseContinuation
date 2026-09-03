@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using ChangeComposer.Data;
@@ -8,7 +7,62 @@ using ChangeComposer.Indexing;
 
 /// <summary>
 /// CompositionCoordinator_v2 - JSON-Driven Beat-Level Coordination
-/// Version: 2026-03-31 v3 (Added stopAll SYNC action)
+/// Version: 2026-09-03 v4 (Reset/reload correctness + coroutine removal)
+///
+/// LINEAGE: v2 (2026-03-20) -> v3 (2026-03-31, added stopAll SYNC action)
+///          -> v4 (this file)
+///
+/// ⚠ PROVENANCE NOTE: v4 was initially built from a STALE project-knowledge
+///   snapshot of v2, which silently dropped the v3 stopAll implementation.
+///   The stopAll code below (SetupBeatAlignments ternary, pickupNote branch,
+///   ExecuteAlignment early case) was reconstructed from the 2026-03-31 session
+///   transcript and verified against the reference count recorded in
+///   Phase7_StudioBuild_Handoff_August2026.md §7 (7 'stopAll' references).
+///   It is a reconstruction, not the original bytes — diff against git before
+///   trusting it. See TEST 3 below.
+///
+/// ═══ v4 CHANGES (2026-09-03) ═══
+///
+///   1. RESET BUG (critical): ResetMetronomeAndScheduler() now calls
+///      sched.SetCurrentPosition(1, 1). MetronomeScheduler_v2 tracks
+///      currentMeasure/currentBeat internally and only advances them via
+///      HandleMeasureChanged()/HandleBeatChanged() during playback. Neither
+///      ClearPendingChanges() nor the metronome's ResetMetronome() rewinds them,
+///      so after a run the scheduler still believed it was at the last measure
+///      played and ScheduleChange() rejected EVERY change on reload as "in the
+///      past". Reset then Load-and-Start produced a silent metronome.
+///
+///   2. INITIAL TIME SIGNATURE: LoadTrack() now applies
+///      sequence.initialBeatsPerMeasure via SetTimeSignature(). Previously only
+///      initialBpm was restored, so a reload after a time-signature change
+///      started in the wrong meter until the first scheduled TS change fired.
+///
+///   3. NO COROUTINES (design principle): StartAllWithDelay() coroutine replaced
+///      by ScheduleDelayedStart() / ProcessPendingStart() driven from Update(),
+///      matching the pattern established in ThreeMetronomeCoordinator_v7/v11.
+///      Delay is measured on AudioSettings.dspTime — the same clock the
+///      metronome schedules beats against — rather than WaitForSeconds.
+///
+///   4. 'using System.Collections' removed (was only needed for IEnumerator).
+///
+///   5. Reset() renamed to ResetComposition(). 'Reset' is a reserved Unity
+///      message: MonoBehaviour.Reset() is invoked by the editor when a component
+///      is added or reset from the gear menu, which fired the teardown at edit
+///      time. NOTE: re-point any UI Button OnClick wired to the old name.
+///
+///   6. StartAllMetronomes() now pushes SetCurrentPosition(fromMeasure, 1) to
+///      each scheduler before starting. Inert when atMeasure == 1; prevents the
+///      scheduler from firing stale early changes when starting mid-composition.
+///
+///   Reset remains a deliberate teardown-to-blank, NOT a reload. The intended
+///   flow is unchanged: Reset, then Load and Start.
+///
+/// ═══ VERIFY AFTER INSTALLING ═══
+///   TEST 1 (reset fix): play to a late measure, Reset, Load and Start.
+///          Expect NO '[MetronomeScheduler v2] ⚠️ Cannot schedule change' warnings.
+///   TEST 2 (no coroutines): confirm the 0.5s startAll delay still fires.
+///   TEST 3 (stopAll intact): run a coordination JSON with a stopAll alignment.
+///          Expect '✅ STOP ALL: triggered by ...' at the lock point.
 ///
 /// ALL FOUR BUGS FIXED:
 ///   Bug 1 (Step 4): LoadTrack() dispatches all change types via ScheduleChange().
@@ -33,7 +87,8 @@ using ChangeComposer.Indexing;
 ///   4. Assign scheduler1/2/3 (MetronomeScheduler_v2)
 ///   5. Press Play, then click "Load and Start"
 /// </summary>
-public class CompositionCoordinator_v2 : MonoBehaviour {
+public class CompositionCoordinator_v2 : MonoBehaviour
+{
 
     // =========================================================
     // INSPECTOR FIELDS
@@ -77,11 +132,17 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     private Dictionary<string, Action<int>> beatEventHandlers = new Dictionary<string, Action<int>>();
     private bool isLoaded = false;
 
+    // v3: pending delayed start (replaces the StartAllWithDelay coroutine)
+    private bool startPending = false;
+    private double startDeadlineDsp = 0.0;
+    private int startAtMeasure = 1;
+
     // =========================================================
     // ALIGNMENT TRIGGER
     // =========================================================
 
-    private struct AlignmentTrigger {
+    private struct AlignmentTrigger
+    {
         public int triggerMeasure;
         public int triggerBeat;
         public bool isAtLockPoint;
@@ -91,11 +152,18 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // UNITY LIFECYCLE
     // =========================================================
 
-    private void Start() {
+    private void Start()
+    {
         Log("CompositionCoordinator_v2 ready. Call LoadAndStart() or click the button.");
     }
 
-    private void OnDestroy() {
+    private void Update()
+    {
+        ProcessPendingStart();
+    }
+
+    private void OnDestroy()
+    {
         UnsubscribeAll();
     }
 
@@ -104,7 +172,8 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // =========================================================
 
     [ContextMenu("▶ Load and Start")]
-    public void LoadAndStart() {
+    public void LoadAndStart()
+    {
         ClearLog();
         Log("═══ COMPOSITION COORDINATOR v2 ═══");
         Log($"Loading: {(coordinationJsonFile ? coordinationJsonFile.name : "⚠ No file assigned")}");
@@ -121,7 +190,7 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
         SetupBeatAlignments();
 
         if (coordination.startAll != null && coordination.startAll.enabled)
-            StartCoroutine(StartAllWithDelay(coordination.startAll));
+            ScheduleDelayedStart(coordination.startAll);
         else
             StartAllMetronomes(coordination.startAll?.atMeasure ?? 1);
 
@@ -134,8 +203,13 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     }
 
     [ContextMenu("■ Stop All")]
-    public void StopAll() {
+    public void StopAll()
+    {
         UnsubscribeAll();
+
+        // v3: a pending delayed start must not survive a stop.
+        startPending = false;
+
         metronome1?.StopMetronome();
         metronome2?.StopMetronome();
         metronome3?.StopMetronome();
@@ -143,9 +217,18 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
         Log("■ Stopped all metronomes.");
     }
 
+    /// <summary>
+    /// Teardown to a blank state. This is deliberately NOT a reload — follow it
+    /// with LoadAndStart() to run the composition again.
+    /// v3: renamed from Reset() to avoid the Unity MonoBehaviour.Reset() message.
+    /// </summary>
     [ContextMenu("↺ Reset")]
-    public void Reset() {
+    public void ResetComposition()
+    {
         StopAll();
+
+        // v3: cancel any pending delayed start from the previous run.
+        startPending = false;
 
         ResetMetronomeAndScheduler(metronome1, scheduler1);
         ResetMetronomeAndScheduler(metronome2, scheduler2);
@@ -163,18 +246,23 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // STEP 1: LOAD COORDINATION JSON
     // =========================================================
 
-    private bool LoadCoordinationJson() {
-        try {
+    private bool LoadCoordinationJson()
+    {
+        try
+        {
             coordination = CompositionCoordination.FromJSON(coordinationJsonFile.text);
 
-            if (coordination == null) {
+            if (coordination == null)
+            {
                 LogError("Failed to parse coordination JSON (null result).");
                 return false;
             }
 
             Log($"✔ Coordination JSON parsed: '{coordination.compositionTitle}'");
             return true;
-        } catch (Exception ex) {
+        }
+        catch (Exception ex)
+        {
             LogError($"Exception parsing coordination JSON: {ex.Message}");
             return false;
         }
@@ -184,29 +272,35 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // STEP 2: BUILD MAPS
     // =========================================================
 
-    private bool BuildMaps() {
+    private bool BuildMaps()
+    {
         metronomeMap = new Dictionary<string, PrecisionMetronome_v5_BeatLevel>();
         schedulerMap = new Dictionary<string, MetronomeScheduler_v2>();
         trackJsonMap = new Dictionary<string, TextAsset>();
         sequenceMap = new Dictionary<string, ChangeSequence_v2>();
 
-        if (trackJsonBindings != null) {
-            foreach (var binding in trackJsonBindings) {
+        if (trackJsonBindings != null)
+        {
+            foreach (var binding in trackJsonBindings)
+            {
                 if (binding.trackId != null && binding.jsonFile != null)
                     trackJsonMap[binding.trackId] = binding.jsonFile;
             }
         }
 
-        if (coordination.tracks == null) {
+        if (coordination.tracks == null)
+        {
             LogError("Coordination JSON has no 'tracks' array.");
             return false;
         }
 
-        foreach (var track in coordination.tracks) {
+        foreach (var track in coordination.tracks)
+        {
             PrecisionMetronome_v5_BeatLevel metro = null;
             MetronomeScheduler_v2 sched = null;
 
-            switch (track.metronomeReference) {
+            switch (track.metronomeReference)
+            {
                 case "metronome1": metro = metronome1; sched = scheduler1; break;
                 case "metronome2": metro = metronome2; sched = scheduler2; break;
                 case "metronome3": metro = metronome3; sched = scheduler3; break;
@@ -216,7 +310,8 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
                     return false;
             }
 
-            if (metro == null) {
+            if (metro == null)
+            {
                 LogError($"Inspector slot '{track.metronomeReference}' is not assigned " +
                          $"(needed by track '{track.id}').");
                 return false;
@@ -234,33 +329,42 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // STEP 3: LOAD TRACK JSONS AND SCHEDULE CHANGES
     // =========================================================
 
-    private bool LoadAllTracks() {
+    private bool LoadAllTracks()
+    {
         Log("Loading track change sequences...");
 
-        foreach (var track in coordination.tracks) {
+        foreach (var track in coordination.tracks)
+        {
             if (!LoadTrack(track)) return false;
         }
 
         return true;
     }
 
-    private bool LoadTrack(TrackReference track) {
+    private bool LoadTrack(TrackReference track)
+    {
         TextAsset jsonAsset = null;
 
-        if (trackJsonMap.TryGetValue(track.id, out jsonAsset) && jsonAsset != null) {
+        if (trackJsonMap.TryGetValue(track.id, out jsonAsset) && jsonAsset != null)
+        {
             // found by track ID
-        } else if (trackJsonBindings != null) {
-            foreach (var binding in trackJsonBindings) {
+        }
+        else if (trackJsonBindings != null)
+        {
+            foreach (var binding in trackJsonBindings)
+            {
                 if (binding.jsonFile != null &&
                     (binding.jsonFile.name == track.jsonFile ||
-                     binding.jsonFile.name == System.IO.Path.GetFileNameWithoutExtension(track.jsonFile))) {
+                     binding.jsonFile.name == System.IO.Path.GetFileNameWithoutExtension(track.jsonFile)))
+                {
                     jsonAsset = binding.jsonFile;
                     break;
                 }
             }
         }
 
-        if (jsonAsset == null) {
+        if (jsonAsset == null)
+        {
             LogError($"No TextAsset found for track '{track.id}' (jsonFile: '{track.jsonFile}'). " +
                      $"Add it to Track Json Bindings in the inspector.");
             return false;
@@ -269,14 +373,18 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
         // POST-STEP-5 FIX: use ChangeSequence_v2.FromJSON() so the sequence
         // holds MetronomeChange_v2 objects compatible with ScheduleChange().
         ChangeSequence_v2 sequence;
-        try {
+        try
+        {
             sequence = ChangeSequence_v2.FromJSON(jsonAsset.text);
-        } catch (Exception ex) {
+        }
+        catch (Exception ex)
+        {
             LogError($"Failed to parse JSON for track '{track.id}': {ex.Message}");
             return false;
         }
 
-        if (sequence == null) {
+        if (sequence == null)
+        {
             LogError($"Track '{track.id}' JSON parsed to null. Check JSON format.");
             return false;
         }
@@ -289,13 +397,17 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
         if (sequence.initialBpm > 0)
             metro.SetTempo(sequence.initialBpm);
 
+        // v3: restore the starting meter too. ResetMetronome() does not touch
+        // _beatsPerMeasure, so without this a reload after a time-signature
+        // change starts in the previous run's meter.
         if (sequence.initialBeatsPerMeasure > 0)
-            metro.BeatsPerMeasure = sequence.initialBeatsPerMeasure;
-
+            metro.SetTimeSignature(sequence.initialBeatsPerMeasure);
 
         int scheduled = 0;
-        if (sequence.changes != null) {
-            foreach (var change in sequence.changes) {
+        if (sequence.changes != null)
+        {
+            foreach (var change in sequence.changes)
+            {
                 if (change.targetBeat < 1)
                     change.targetBeat = 1;
 
@@ -321,10 +433,12 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // BUILD COMPOSITION INDEXES
     // =========================================================
 
-    private void BuildCompositionIndexes() {
+    private void BuildCompositionIndexes()
+    {
         indexMap = new Dictionary<string, CompositionIndex>();
 
-        foreach (var kvp in sequenceMap) {
+        foreach (var kvp in sequenceMap)
+        {
             string trackId = kvp.Key;
             ChangeSequence_v2 seq = kvp.Value;
 
@@ -346,14 +460,17 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     /// so CompositionIndexGenerator (which hasn't been updated yet) can consume it.
     /// Remove once CompositionIndexGenerator is updated to accept ChangeSequence_v2.
     /// </summary>
-    private ChangeSequence ConvertToV1Sequence(ChangeSequence_v2 v2) {
+    private ChangeSequence ConvertToV1Sequence(ChangeSequence_v2 v2)
+    {
         var v1 = ScriptableObject.CreateInstance<ChangeSequence>();
         v1.title = v2.title;
         v1.initialBpm = v2.initialBpm;
         v1.initialBeatsPerMeasure = v2.initialBeatsPerMeasure;
 
-        if (v2.changes != null) {
-            foreach (var c in v2.changes) {
+        if (v2.changes != null)
+        {
+            foreach (var c in v2.changes)
+            {
                 // Map the fields that CompositionIndex cares about
                 var v1Change = new MetronomeChange(c.targetMeasure, c.newBpm, c.description);
                 v1Change.targetMeasure = c.targetMeasure;
@@ -376,9 +493,11 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // SETUP BEAT ALIGNMENTS
     // =========================================================
 
-    private void SetupBeatAlignments() {
+    private void SetupBeatAlignments()
+    {
         if (coordination.beatLevelAlignments == null ||
-            coordination.beatLevelAlignments.Count == 0) {
+            coordination.beatLevelAlignments.Count == 0)
+        {
             Log("  (No beat alignments defined)");
             return;
         }
@@ -386,13 +505,16 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
         Log($"Setting up {coordination.beatLevelAlignments.Count} beat-level alignment(s)...");
         alignmentTriggers = new List<AlignmentTrigger>();
 
-        for (int i = 0; i < coordination.beatLevelAlignments.Count; i++) {
+        for (int i = 0; i < coordination.beatLevelAlignments.Count; i++)
+        {
             var alignment = coordination.beatLevelAlignments[i];
 
             var refTrack = coordination.GetTrack(alignment.referenceTrack);
-            if (refTrack == null) {
+            if (refTrack == null)
+            {
                 LogError($"  Alignment {i}: references unknown track '{alignment.referenceTrack}'");
-                alignmentTriggers.Add(new AlignmentTrigger {
+                alignmentTriggers.Add(new AlignmentTrigger
+                {
                     triggerMeasure = alignment.lockAtMeasure,
                     triggerBeat = alignment.lockAtBeat,
                     isAtLockPoint = true
@@ -403,7 +525,8 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
             // stopAll fires exactly at the lock point — no pickup needed.
             // resetBeat needs a pickup beat to prepare the sync one beat in advance.
             AlignmentTrigger trigger = (alignment.action == "stopAll")
-                ? new AlignmentTrigger {
+                ? new AlignmentTrigger
+                {
                     triggerMeasure = alignment.lockAtMeasure,
                     triggerBeat = alignment.lockAtBeat,
                     isAtLockPoint = true
@@ -415,7 +538,8 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
 
             alignmentTriggers.Add(trigger);
 
-            if (!beatEventHandlers.ContainsKey(alignment.referenceTrack)) {
+            if (!beatEventHandlers.ContainsKey(alignment.referenceTrack))
+            {
                 string refTrackId = alignment.referenceTrack;
                 var refMetronome = metronomeMap[refTrackId];
 
@@ -446,20 +570,25 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     private AlignmentTrigger ComputePickupBeat(
             int lockAtMeasure,
             int lockAtBeat,
-            string referenceTrackId) {
+            string referenceTrackId)
+    {
 
-        if (lockAtMeasure <= 1 && lockAtBeat <= 1) {
+        if (lockAtMeasure <= 1 && lockAtBeat <= 1)
+        {
             LogWarning("Lock point is at M1 B1 — no pickup beat possible. " +
                        "Alignment will fire at the lock point itself.");
-            return new AlignmentTrigger {
+            return new AlignmentTrigger
+            {
                 triggerMeasure = lockAtMeasure,
                 triggerBeat = lockAtBeat,
                 isAtLockPoint = true
             };
         }
 
-        if (lockAtBeat > 1) {
-            return new AlignmentTrigger {
+        if (lockAtBeat > 1)
+        {
+            return new AlignmentTrigger
+            {
                 triggerMeasure = lockAtMeasure,
                 triggerBeat = lockAtBeat - 1,
                 isAtLockPoint = false
@@ -469,22 +598,27 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
         int prevMeasure = lockAtMeasure - 1;
         int prevBeatsPerMeasure = GetBeatsPerMeasureAt(prevMeasure, referenceTrackId);
 
-        return new AlignmentTrigger {
+        return new AlignmentTrigger
+        {
             triggerMeasure = prevMeasure,
             triggerBeat = prevBeatsPerMeasure,
             isAtLockPoint = false
         };
     }
 
-    private int GetBeatsPerMeasureAt(int measure, string trackId) {
-        if (indexMap != null && indexMap.TryGetValue(trackId, out var index)) {
+    private int GetBeatsPerMeasureAt(int measure, string trackId)
+    {
+        if (indexMap != null && indexMap.TryGetValue(trackId, out var index))
+        {
             var state = index.GetStateAtMeasure(measure);
             if (state != null)
                 return state.beatsPerMeasure;
 
             LogWarning($"CompositionIndex for '{trackId}' has no entry for M{measure}. " +
                        "Defaulting to 4 beats.");
-        } else {
+        }
+        else
+        {
             LogWarning($"No CompositionIndex found for '{trackId}'. Defaulting to 4 beats.");
         }
 
@@ -495,13 +629,15 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // BEAT EVENT HANDLER
     // =========================================================
 
-    private void HandleBeatEvent(string referenceTrackId, int beat) {
+    private void HandleBeatEvent(string referenceTrackId, int beat)
+    {
         if (coordination?.beatLevelAlignments == null) return;
 
         var refMetronome = metronomeMap[referenceTrackId];
         int currentMeasure = refMetronome.CurrentMeasure;
 
-        for (int i = 0; i < coordination.beatLevelAlignments.Count; i++) {
+        for (int i = 0; i < coordination.beatLevelAlignments.Count; i++)
+        {
             var alignment = coordination.beatLevelAlignments[i];
 
             if (alignment.referenceTrack != referenceTrackId) continue;
@@ -513,12 +649,14 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
         }
     }
 
-    private void ExecuteAlignment(int index, BeatLevelAlignment alignment) {
+    private void ExecuteAlignment(int index, BeatLevelAlignment alignment)
+    {
         firedAlignments.Add(index);
 
         // stopAll is coordinator-level — no actionTrack needed.
         // Check before the actionTrack lookup so the absent field is never read.
-        if (alignment.action == "stopAll") {
+        if (alignment.action == "stopAll")
+        {
             string desc = !string.IsNullOrEmpty(alignment.description)
                 ? alignment.description : $"alignment[{index}]";
             Log($"✅ STOP ALL: triggered by '{alignment.referenceTrack}' " +
@@ -527,12 +665,14 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
             return;
         }
 
-        if (!metronomeMap.TryGetValue(alignment.actionTrack, out var actionMetronome)) {
+        if (!metronomeMap.TryGetValue(alignment.actionTrack, out var actionMetronome))
+        {
             LogError($"Alignment {index}: unknown action track '{alignment.actionTrack}'");
             return;
         }
 
-        switch (alignment.action) {
+        switch (alignment.action)
+        {
             case "resetBeat":
                 var refMetronome = metronomeMap[alignment.referenceTrack];
                 actionMetronome.SetCurrentBeat(alignment.resetToBeat);
@@ -560,28 +700,65 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // START ALL METRONOMES
     // =========================================================
 
-    private void StartAllMetronomes(int fromMeasure) {
+    private void StartAllMetronomes(int fromMeasure)
+    {
         Log($"Starting all metronomes from measure {fromMeasure}...");
 
-        foreach (var kvp in metronomeMap) {
+        foreach (var kvp in metronomeMap)
+        {
+            // v3: keep the scheduler's position in step with the metronome so it
+            // does not fire changes from measures we are starting past.
+            if (schedulerMap != null &&
+                schedulerMap.TryGetValue(kvp.Key, out var sched) && sched != null)
+            {
+                sched.SetCurrentPosition(fromMeasure, 1);
+            }
+
             kvp.Value.StartAtMeasure(fromMeasure);
             Log($"  ✔ Started '{kvp.Key}'");
         }
     }
 
-    private IEnumerator StartAllWithDelay(StartAllConfig config) {
+    // =========================================================
+    // DELAYED START (v3 — no coroutines)
+    // =========================================================
+
+    /// <summary>
+    /// Arm a delayed start. Replaces the StartAllWithDelay() coroutine.
+    /// The deadline uses AudioSettings.dspTime so it stays coherent with the
+    /// beat scheduling clock; Time.time would drift against it.
+    /// </summary>
+    private void ScheduleDelayedStart(StartAllConfig config)
+    {
+        startPending = true;
+        startDeadlineDsp = AudioSettings.dspTime + config.delaySeconds;
+        startAtMeasure = config.atMeasure;
+
         Log($"  Waiting {config.delaySeconds}s before start...");
-        yield return new WaitForSeconds(config.delaySeconds);
-        StartAllMetronomes(config.atMeasure);
+    }
+
+    /// <summary>
+    /// Fire the armed start once its deadline passes. Driven from Update().
+    /// </summary>
+    private void ProcessPendingStart()
+    {
+        if (!startPending) return;
+        if (AudioSettings.dspTime < startDeadlineDsp) return;
+
+        startPending = false;
+        StartAllMetronomes(startAtMeasure);
     }
 
     // =========================================================
     // CLEANUP
     // =========================================================
 
-    private void UnsubscribeAll() {
-        if (beatEventHandlers != null && metronomeMap != null) {
-            foreach (var kvp in beatEventHandlers) {
+    private void UnsubscribeAll()
+    {
+        if (beatEventHandlers != null && metronomeMap != null)
+        {
+            foreach (var kvp in beatEventHandlers)
+            {
                 if (metronomeMap.TryGetValue(kvp.Key, out var metro))
                     metro.OnBeatTriggered -= kvp.Value;
             }
@@ -596,28 +773,45 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
 
     private void ResetMetronomeAndScheduler(
             PrecisionMetronome_v5_BeatLevel metro,
-            MetronomeScheduler_v2 sched) {
+            MetronomeScheduler_v2 sched)
+    {
         metro?.ClearPendingChanges();
         metro?.ResetMetronome();
-        sched?.ClearPendingChanges();
+
+        if (sched != null)
+        {
+            sched.ClearPendingChanges();
+
+            // v3 CRITICAL: rewind the scheduler's own position counters.
+            // MetronomeScheduler_v2 keeps private currentMeasure/currentBeat that
+            // only advance via HandleMeasureChanged()/HandleBeatChanged() during
+            // playback. Nothing else resets them, and ScheduleChange() rejects any
+            // change at or before that position — so without this line a reload
+            // schedules nothing and the metronome runs at its initial tempo forever.
+            sched.SetCurrentPosition(1, 1);
+        }
     }
 
     // =========================================================
     // VALIDATION
     // =========================================================
 
-    private bool ValidateInspectorAssignments() {
+    private bool ValidateInspectorAssignments()
+    {
         bool ok = true;
 
-        if (coordinationJsonFile == null) {
+        if (coordinationJsonFile == null)
+        {
             LogError("coordinationJsonFile is not assigned!");
             ok = false;
         }
-        if (metronome1 == null) {
+        if (metronome1 == null)
+        {
             LogError("metronome1 is not assigned!");
             ok = false;
         }
-        if (metronome2 == null) {
+        if (metronome2 == null)
+        {
             LogError("metronome2 is not assigned!");
             ok = false;
         }
@@ -629,22 +823,26 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
     // LOGGING
     // =========================================================
 
-    private void Log(string message) {
+    private void Log(string message)
+    {
         statusLog += message + "\n";
         if (debugLogging) Debug.Log($"[CoordinatorV2] {message}");
     }
 
-    private void LogWarning(string message) {
+    private void LogWarning(string message)
+    {
         statusLog += $"⚠ {message}\n";
         Debug.LogWarning($"[CoordinatorV2] {message}");
     }
 
-    private void LogError(string message) {
+    private void LogError(string message)
+    {
         statusLog += $"❌ {message}\n";
         Debug.LogError($"[CoordinatorV2] {message}");
     }
 
-    private void ClearLog() {
+    private void ClearLog()
+    {
         statusLog = "";
     }
 }
@@ -654,7 +852,8 @@ public class CompositionCoordinator_v2 : MonoBehaviour {
 // =========================================================
 
 [Serializable]
-public class TrackJsonBinding {
+public class TrackJsonBinding
+{
     [Tooltip("Must match the 'id' field in the coordination JSON (e.g. 'track1')")]
     public string trackId;
 
