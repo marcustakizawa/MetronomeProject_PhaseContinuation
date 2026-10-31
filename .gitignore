@@ -20,3 +20,6 @@
 *.mdb
 *.opendb
 *.VC.db
+
+# Reference timing CSVs from PrecisionMetronome_v5_BeatLevel (logReferenceTiming)
+/ReferenceTiming/
