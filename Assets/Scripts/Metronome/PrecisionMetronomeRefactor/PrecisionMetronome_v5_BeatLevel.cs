@@ -1,6 +1,9 @@
 ﻿using ChangeComposer.Data;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -86,6 +89,11 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
     [Header("Change System")]
     [SerializeField] private bool debugChangeSystem = true;
 
+    // === REFERENCE TIMING LOG ===
+    [Header("Reference Timing Log")]
+    [Tooltip("Record every PlayScheduled call to <project>/ReferenceTiming/<track>_<yyyyMMdd_HHmmss>.csv. Off = no behavior change.")]
+    [SerializeField] private bool logReferenceTiming = false;
+
     // === INTERNAL STATE ===
     private bool _isAudioMuted = false;
     private bool _isStopped = false;
@@ -94,6 +102,23 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
     private int _currentBeat = 1;
     private bool _isPlaying = false;
     private bool _isFirstBeat = true;
+
+    // Reference timing: rows are buffered here and written only outside the
+    // scheduling path (LateUpdate after a stop, Reset, OnDisable, OnApplicationQuit).
+    private struct ReferenceTimingRow {
+        public int measure;
+        public int beat;
+        public double dspTime;
+        public double callDsp;
+        public float bpm;
+        public int beatsPerMeasure;
+        public bool muted;
+        public bool sourceEnabled;
+    }
+    private readonly List<ReferenceTimingRow> _refRows = new List<ReferenceTimingRow>(1024);
+    private string _refTrackName;
+    private string _refRunStamp;   // null = no run open; next row opens a new file
+    private bool _refWritePending;
 
     // === PROPERTIES ===
     public float Bpm {
@@ -285,6 +310,23 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
         }
     }
 
+    // A stop is applied from inside Update() before ScheduleNextBeat(), so the
+    // stopping beat's row arrives after StopMetronome(). Writing here, after all
+    // Updates this frame, keeps that row in the run's file.
+    void LateUpdate() {
+        if (_refWritePending) {
+            WriteReferenceTimingFile();
+        }
+    }
+
+    void OnDisable() {
+        WriteReferenceTimingFile();
+    }
+
+    void OnApplicationQuit() {
+        WriteReferenceTimingFile();
+    }
+
     // === VISUAL FEEDBACK METHODS (NEW in v5.1) ===
 
     /// <summary>
@@ -372,6 +414,9 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
 
             if (clipToPlay != null) {
                 _audioSource.clip = clipToPlay;
+                if (logReferenceTiming) {
+                    RecordReferenceTiming(_nextBeatTime);
+                }
                 _audioSource.PlayScheduled(_nextBeatTime);
             }
         }
@@ -381,6 +426,67 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
         _currentBeat++;
         if (_currentBeat > _beatsPerMeasure) {
             _currentBeat = 1;
+        }
+    }
+
+    // === REFERENCE TIMING LOG ===
+    private void RecordReferenceTiming(double dspTime) {
+        if (_refRunStamp == null) {
+            _refTrackName = gameObject.name;
+            _refRunStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+        }
+
+        _refRows.Add(new ReferenceTimingRow {
+            measure = CurrentMeasure,
+            beat = _currentBeat,
+            dspTime = dspTime,
+            callDsp = AudioSettings.dspTime,
+            bpm = _bpm,
+            beatsPerMeasure = _beatsPerMeasure,
+            muted = _audioSource.mute,
+            sourceEnabled = _audioSource.isActiveAndEnabled
+        });
+    }
+
+    private void WriteReferenceTimingFile() {
+        _refWritePending = false;
+        if (_refRows.Count == 0) {
+            _refRunStamp = null;
+            return;
+        }
+
+        try {
+            string dir = Path.Combine(Path.GetDirectoryName(Application.dataPath), "ReferenceTiming");
+            Directory.CreateDirectory(dir);
+
+            string baseName = $"{_refTrackName}_{_refRunStamp}";
+            string path = Path.Combine(dir, baseName + ".csv");
+            for (int n = 2; File.Exists(path); n++) {
+                path = Path.Combine(dir, $"{baseName}_{n}.csv");
+            }
+
+            CultureInfo inv = CultureInfo.InvariantCulture;
+            var sb = new StringBuilder(96 * (_refRows.Count + 1));
+            sb.Append("track,measure,beat,dsp_time,call_dsp,bpm,beats_per_measure,muted,source_enabled\n");
+            foreach (var r in _refRows) {
+                sb.Append(_refTrackName).Append(',')
+                  .Append(r.measure.ToString(inv)).Append(',')
+                  .Append(r.beat.ToString(inv)).Append(',')
+                  .Append(r.dspTime.ToString("G17", inv)).Append(',')
+                  .Append(r.callDsp.ToString("G17", inv)).Append(',')
+                  .Append(r.bpm.ToString("G9", inv)).Append(',')
+                  .Append(r.beatsPerMeasure.ToString(inv)).Append(',')
+                  .Append(r.muted ? "true" : "false").Append(',')
+                  .Append(r.sourceEnabled ? "true" : "false").Append('\n');
+            }
+
+            File.WriteAllText(path, sb.ToString());
+            Debug.Log($"{_refTrackName}: wrote {_refRows.Count} reference timing rows to {path}");
+        } catch (Exception e) {
+            Debug.LogError($"{gameObject.name}: failed to write reference timing CSV: {e.Message}");
+        } finally {
+            _refRows.Clear();
+            _refRunStamp = null;
         }
     }
 
@@ -469,6 +575,9 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
     public void StartMetronome() {
         if (_isPlaying) return;
 
+        // Stop + start in the same frame: close the previous run before this one opens.
+        if (_refWritePending) WriteReferenceTimingFile();
+
         _isPlaying = true;
         _isFirstBeat = true;
         _isStopped = false;
@@ -483,6 +592,8 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
     }
 
     public void StartAtMeasure(int measure) {
+        if (_refWritePending) WriteReferenceTimingFile();
+
         _isPlaying = false;
         _currentBeat = 1;
         _isFirstBeat = true;
@@ -514,6 +625,9 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
         _isPlaying = false;
         _isStopped = true;
 
+        // Written in LateUpdate so the stopping beat's row lands in this run's file.
+        _refWritePending = true;
+
         if (_audioSource != null) {
             _audioSource.Stop();
         }
@@ -539,6 +653,9 @@ public class PrecisionMetronome_v5_BeatLevel : MonoBehaviour {
     }
 
     public void ResetMetronome() {
+        // Reset ends the run; the next row opens a new file.
+        WriteReferenceTimingFile();
+
         _isPlaying = false;
         _currentBeat = 1;
         _isFirstBeat = true;
